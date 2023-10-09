@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-#Vision Transformer模型
+# Vision Transformer model
 class VisionTransformer(nn.Module):
     def __init__(self, num_classes, patch_size, hidden_dim, num_heads, num_layers, image_size):
         super(VisionTransformer, self).__init__()
@@ -33,8 +33,8 @@ class VisionTransformer(nn.Module):
         x = x.mean(dim=1)  # Global average pooling
         x = self.fc(x)
         return x
-  
-# 定义训练和微调函数
+
+# Define training and fine-tuning functions
 def train_model(model, train_loader, optimizer, criterion, device):
     model.train()
     running_loss = 0.0
@@ -48,7 +48,6 @@ def train_model(model, train_loader, optimizer, criterion, device):
         running_loss += loss.item()
     return running_loss / len(train_loader)
 
-# 定义测试函数
 def test_model(model, test_loader, criterion, device):
     model.eval()
     correct = 0
@@ -65,71 +64,65 @@ def test_model(model, test_loader, criterion, device):
             correct += (predicted == labels).sum().item()
     return test_loss / len(test_loader), correct / total
 
-# 设置超参数
-num_classes = 10
-patch_size = 8
-hidden_dim = 960
-num_heads = 12 #embed_dim 必须是 num_heads 的倍数
-num_layers = 12
-image_size = 32
-batch_size = 64
-num_epochs_pretrain = 30
-num_epochs_finetune = 20
-learning_rate_pretrain = 0.0001
-learning_rate_finetune = 0.00001
+def main():
+    # Set hyperparameters
+    num_classes = 10
+    patch_size = 16  # Patch size (P) = 16
+    hidden_dim = 768  # Latent vector (D). ViT-Base uses 768
+    num_heads = 12  # embed_dim must be a multiple of num_heads. ViT-Base uses 12 heads
+    num_layers = 12  # ViT-Base uses 12 encoder layer
+    image_size = 224  #ori=32
+    batch_size = 4
+    num_epochs_pretrain = 30
+    num_epochs_finetune = 20
+    learning_rate_pretrain = 10e-3 # Base LR
+    learning_rate_finetune = 10e-3
 
-#数据预处理和加载CIFAR-10数据集
-#CIFAR-10:train=50000,test=10000
-transform = transforms.Compose([transforms.Resize((image_size, image_size)),
-                                transforms.ToTensor(),
-                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    # Data preprocessing and loading CIFAR-10 dataset
+    # CIFAR-10: train=50000, test=10000
+    transform = transforms.Compose([transforms.Resize((image_size, image_size)),
+                                    transforms.ToTensor(),
+                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-#train size:50000 / 64=781.25，大约782个batch
-#使用loader確保數據分離
-train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=False)
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-#test size:10000 / 64=156.25，大约157个batch
-test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, transform=transform, download=False)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    # train size: 50000 / 64 ≈ 782 batches
+    # Use DataLoader to ensure data separation
+    train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-# 创建模型并定义损失函数和优化器
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = VisionTransformer(num_classes, patch_size, hidden_dim, num_heads, num_layers, image_size).to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer_pretrain = optim.Adam(model.parameters(), lr=learning_rate_pretrain, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001, amsgrad=True)
-'''
-                    optim.RMSprop(
-                        model.parameters(),
-                        lr=learning_rate_pretrain,
-                        alpha=0.99,           # 移动平均值的衰减率，根据经验通常设置为0.99
-                        eps=1e-08,            # epsilon用于防止除零错误，通常使用默认值1e-08
-                        weight_decay=0.001,   # 权重衰减（L2正则化），权重衰减（L2正则化）的参数
-                        momentum=0,           # 动量是一个用于加速梯度下降的参数，通常在0到1之间，不使用动量设置为0
-                        centered=False        # 中心化的计算梯度的移动平均值，并将其用于更新参数，不确定可以将它设置为False
-                    )
-'''
-optimizer_finetune = optim.Adam(model.parameters(), lr=learning_rate_finetune, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001, amsgrad=True)
+    # test size: 10000 / 64 ≈ 157 batches
+    test_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, transform=transform, download=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+    # Create the model and define loss function and optimizer
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = VisionTransformer(num_classes, patch_size, hidden_dim, num_heads, num_layers, image_size).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer_pretrain = optim.Adam(model.parameters(), lr=learning_rate_pretrain, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.03, amsgrad=True) # Weight decay for ViT-Base (on ImageNet-21k)
+    #optimizer_finetune = optim.Adam(model.parameters(), lr=learning_rate_finetune, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.03, amsgrad=True)
 
-######### Pre-train
-for epoch in range(num_epochs_pretrain):
-    train_loss = train_model(model, train_loader, optimizer_pretrain, criterion, device)
-    print(f"Pretraining - Epoch {epoch + 1}/{num_epochs_pretrain}, Loss: {train_loss:.4f}")
+    #### Pre-train
+    for epoch in range(num_epochs_pretrain):
+        train_loss = train_model(model, train_loader, optimizer_pretrain, criterion, device)
+        print(f"Pretraining - Epoch {epoch + 1}/{num_epochs_pretrain}, Loss: {train_loss:.4f}")
 
-# 保存预训练模型
-torch.save(model.state_dict(), "vit_pretrained.pth")
+    # Save the pre-trained model
+    torch.save(model.state_dict(), "vit_pretrained.pth")
 
+    '''
+    #### Fine-tune
+    model.load_state_dict(torch.load("vit_pretrained.pth"))
+    for param in model.parameters():
+        param.requires_grad = True
 
-######### Fine-tune
-model.load_state_dict(torch.load("vit_pretrained.pth"))
-for param in model.parameters():
-    param.requires_grad = True
+    for epoch in range(num_epochs_finetune):
+        train_loss = train_model(model, train_loader, optimizer_finetune, criterion, device)
+        test_loss, accuracy = test_model(model, test_loader, criterion, device)
+        print(f"Fine-tuning - Epoch {epoch + 1}/{num_epochs_finetune}, "
+              f"Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Accuracy: {accuracy * 100:.2f}%")
 
-for epoch in range(num_epochs_finetune):
-    train_loss = train_model(model, train_loader, optimizer_finetune, criterion, device)
-    test_loss, accuracy = test_model(model, test_loader, criterion, device)
-    print(f"Fine-tuning - Epoch {epoch + 1}/{num_epochs_finetune}, "
-          f"Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Accuracy: {accuracy * 100:.2f}%")
+    # Save the fine-tuned model
+    torch.save(model.state_dict(), "vit_finetuned.pth")
+    '''
 
-# 保存微调后的模型
-torch.save(model.state_dict(), "vit_finetuned.pth")
+if __name__ == '__main__':
+    main()
