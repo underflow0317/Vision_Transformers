@@ -25,11 +25,13 @@ def main():
     num_classes = 10  # CIFAR-10 has 10 classes
 
     print("Model: vit_b_16", flush=True)
+
     # Load the Vision Transformer model
+    # https://pytorch.org/vision/0.12/_modules/torchvision/models/vision_transformer.html
     model = vision_transformer.vit_b_16(num_classes=num_classes)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.01, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.03, amsgrad=True)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
